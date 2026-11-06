@@ -79,7 +79,8 @@ def detect(
     if tw is not None and time_window_ns is None:
         time_window_ns = tw * 1e9
     net = YOLO(model_path)
-    res = net.predict(img, conf=conf, verbose=False)[0]
+    # hyperbola boxes of one object overlap a lot -> stricter, class-agnostic NMS
+    res = net.predict(img, conf=conf, iou=0.3, agnostic_nms=True, verbose=False)[0]
     names = res.names if hasattr(res, "names") else dict(enumerate(CLASS_NAMES))
     W, H = img.size
     dets = []
