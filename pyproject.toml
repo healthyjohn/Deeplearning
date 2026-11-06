@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpr-kiln"
+version = "0.1.0"
+description = "gprMax synthetic GPR data + YOLO cavity/pipe detector, exposed as MCP tools for Kiln"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "h5py",
+  "pillow",
+  "gprMax>=4.0",
+  "ultralytics>=8.3",
+  "mcp>=1.2",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+gpr-kiln = "gpr_kiln.cli:main"
+gpr-kiln-mcp = "gpr_kiln.mcp_server:main"
+
+[tool.setuptools]
+packages = ["gpr_kiln"]

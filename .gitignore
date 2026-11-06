@@ -1,0 +1,6 @@
+gpr_kiln_work/
+runs/
+*.pt
+__pycache__/
+*.egg-info/
+.pytest_cache/

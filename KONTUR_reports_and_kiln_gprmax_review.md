@@ -99,34 +99,27 @@
 
 **Kiln이 하는 일** (GitHub README 기준): LLM 평가(Evals), 프롬프트/모델 자동 최적화, RAG, 에이전트, **LLM 파인튜닝(60+ 모델)**, **합성 데이터 생성**, 데이터셋 관리(JSON). 이미지는 RAG 문서로만 넣을 수 있고, 텍스트로 변환되어 쓰입니다.
 
-**결론: gprMax로 만든 B-scan 이미지로 YOLO 같은 탐지 모델을 학습하는 데는 Kiln을 쓸 수 없습니다.**
-- Kiln은 **LLM(언어모델) 전용**입니다. 이미지 탐지 모델(CNN/YOLO) 학습 기능이 없습니다.
-- 데이터셋 형식이 JSON 텍스트라 레이더 영상(2D/3D 배열)을 학습 데이터로 넣는 구조가 아닙니다.
-- Kiln 자체의 "합성 데이터 생성"은 LLM으로 **텍스트**를 만드는 기능이라 gprMax(전자기 물리 시뮬레이션)를 대신하지 못합니다.
+> **정정 (2026-11-06)**: 처음 버전에서 "Kiln은 언어모델 전용이라 이미지 탐지 모델을 쓸 수 없다"고 썼는데, 틀린 설명이었습니다.
+> Kiln은 **도구(Tools / MCP 서버, Python Code Tools)** 로 외부 모델을 붙일 수 있어서, 이미지 탐지 모델도 Kiln 안에서 도구로 불러 쓸 수 있습니다.
+> 정확히 말하면 Kiln **자체의 파인튜닝 기능**이 LLM용이라는 뜻이었습니다. YOLO 학습은 Kiln 바깥 Python에서 하고, Kiln에서는 도구로 호출합니다.
 
-**대신 이렇게 나눠 쓰면 Kiln도 쓸모가 있습니다**
+**결론: 가능합니다.** gprMax 데이터 생성 → YOLO 학습 → 탐지를 **MCP 도구로 만들어 Kiln에 연결**했습니다.
+- 구현: 저장소의 `gpr_kiln/` 패키지, 사용법은 `gpr_kiln/README.md`
+- Kiln에서 쓸 수 있는 도구: `gpr_simulate_scene`, `gpr_generate_dataset`, `gpr_train_detector`, `gpr_detect`
 
 ```
-[gprMax 합성 B-scan] + [KONTUR 실측 데이터]
-          │
-          ▼
-   YOLO / CNN 학습 (PyTorch, Ultralytics)  ← 탐지는 여기서
-          │  결과: {위치, 깊이, 크기, 신뢰도, 클래스}  (JSON)
-          ▼
-   Kiln AI  ← 여기부터 Kiln
-     ├─ 탐지 결과 JSON → "공동 위험등급 판정 + 탐사 보고서 문장" 생성 태스크
-     ├─ Kiln 합성데이터로 다양한 탐지결과 예시 생성 → 판정 LLM 파인튜닝
-     ├─ Evals로 판정/보고서 품질 평가
-     └─ RAG: 3D-GPR 매뉴얼(RD-19-R3-003), TxDOT 보고서, 논문을 넣어 Q&A 학습 도우미
+Kiln 태스크 / 에이전트
+   │  (MCP 도구 호출)
+   ▼
+gpr-kiln MCP 서버
+   ├─ gpr_generate_dataset : gprMax로 도로 단면(포장층 + 공동/관로) 시뮬레이션 → YOLO 데이터셋
+   ├─ gpr_train_detector   : Ultralytics YOLO 학습
+   ├─ gpr_detect           : B-scan 이미지 → 공동/관로 위치·깊이(JSON)
+   └─ gpr_simulate_scene   : 시뮬레이션 1장 미리보기
+   │
+   ▼  탐지 결과 JSON
+Kiln LLM → 위험등급 판정, 탐사 보고서 작성, Evals로 품질 평가, RAG로 매뉴얼 참조
 ```
-
-| 단계 | 도구 | Kiln 사용 가능? |
-|---|---|---|
-| 학습용 레이더 영상 생성 | gprMax | ✕ |
-| 공동·관로 탐지 모델 학습 | PyTorch / Ultralytics YOLO | ✕ |
-| 탐지 결과 → 등급 판정·보고서 자동 작성 | LLM | ✓ |
-| 매뉴얼·논문 기반 질의응답 | RAG | ✓ |
-| 판정 품질 평가 | Evals | ✓ |
 
 ### 해석 B — **우리 소성로(Kiln, 킬른) AI** (시멘트·석회 로터리 킬른 등)
 
