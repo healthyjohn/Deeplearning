@@ -36,6 +36,10 @@ def gprmax_input(scene: Scene, title: str = "gpr_kiln scene") -> str:
     for layer in s.layers:
         y_top = s.surface_y - layer.top
         lines.append(f"#box: 0 0 0 {s.width:.4f} {y_top:.4f} {dz:.4f} {layer.name}")
+    for i, (c, e) in enumerate(zip(s.clutter, s.clutter_eps)):
+        lines.append(f"#material: {e:.2f} 0.001 1 0 stone{i}")
+        y = s.surface_y - c.depth
+        lines.append(f"#cylinder: {c.x:.4f} {y:.4f} 0 {c.x:.4f} {y:.4f} {dz:.4f} {c.radius:.4f} stone{i}")
     for t in s.targets:
         mat = "free_space" if t.cls == "cavity" else "pec"
         y = s.surface_y - t.depth
@@ -127,6 +131,13 @@ def simulate_analytic(scene: Scene, rng: np.random.Generator | None = None, n_sa
         if tg.cls == "cavity":  # bottom-of-void echo
             tb = tt + 2 * 2 * tg.radius / C0
             out += 0.5 * amp[None, :] * _ricker(t[:, None] - shift - tb[None, :], s.freq)
+
+    for c, e in zip(s.clutter, s.clutter_eps):
+        v = s.mean_velocity(c.depth)
+        dist = np.sqrt((xs - c.x) ** 2 + c.depth**2) - c.radius
+        n0, n1 = np.sqrt(s.eps_at(c.depth)), np.sqrt(e)
+        amp = (n0 - n1) / (n0 + n1) * 0.08 / np.maximum(dist, 0.05) * np.exp(-1.2 * dist)
+        out += amp[None, :] * _ricker(t[:, None] - shift - (2 * dist / v)[None, :], s.freq)
 
     out += 0.004 * rng.standard_normal(out.shape).astype(np.float32)
     return out, dt

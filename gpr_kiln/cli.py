@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 
 
 def main(argv=None):
@@ -21,7 +22,8 @@ def main(argv=None):
     g.add_argument("--engine", choices=["gprmax", "analytic"], default="gprmax")
     g.add_argument("--seed", type=int, default=0)
     g.add_argument("--val-fraction", type=float, default=0.2)
-    g.add_argument("--freq", type=float, default=600e6, help="antenna centre frequency, Hz")
+    g.add_argument("--profile", default="demo", help="equipment profile: demo | kontur-deep1808")
+    g.add_argument("--freq", type=float, default=None, help="override Ricker centre frequency, Hz")
 
     t = sub.add_parser("train")
     t.add_argument("data_yaml")
@@ -43,6 +45,18 @@ def main(argv=None):
     d.add_argument("--dt", type=float, help="sample interval (s) for raw .npy input")
     d.add_argument("--save", help="write annotated image here")
 
+    L = sub.add_parser("detect-long", help="detect along a long Examiner B-scan (SEG-Y or screenshot)")
+    L.add_argument("model")
+    L.add_argument("input")
+    L.add_argument("--from-m", type=float, required=True, help="road distance at left edge")
+    L.add_argument("--to-m", type=float, required=True, help="road distance at right edge")
+    L.add_argument("--time-window-ns", type=float, required=True)
+    L.add_argument("--eps", type=float, default=7.0)
+    L.add_argument("--profile", default="kontur-deep1808")
+    L.add_argument("--conf", type=float, default=0.25)
+    L.add_argument("--channel", type=int)
+    L.add_argument("--traces-per-channel", type=int)
+
     s = sub.add_parser("serve")
     s.add_argument("--transport", choices=["stdio", "streamable-http", "sse"], default="stdio")
 
@@ -50,7 +64,8 @@ def main(argv=None):
     if a.cmd == "generate":
         from .dataset import generate_dataset
 
-        r = generate_dataset(a.out_dir, a.n_scenes, a.engine, a.seed, a.val_fraction, scene_overrides={"freq": a.freq})
+        ov = {"freq": a.freq} if a.freq else None
+        r = generate_dataset(a.out_dir, a.n_scenes, a.engine, a.seed, a.val_fraction, scene_overrides=ov, profile=a.profile)
     elif a.cmd == "train":
         from .detector import train
 
@@ -59,6 +74,11 @@ def main(argv=None):
         from .detector import detect
 
         r = detect(a.model, a.input, a.conf, a.scan_length_m, a.time_window_ns, a.eps, a.dt, a.save)
+    elif a.cmd == "detect-long":
+        from .mcp_server import gpr_detect_long
+
+        r = gpr_detect_long(os.path.abspath(a.input), os.path.abspath(a.model), a.from_m, a.to_m, a.time_window_ns,
+                            a.eps, a.profile, a.conf, a.channel, a.traces_per_channel)
     else:
         from .mcp_server import main as serve
 

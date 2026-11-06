@@ -28,6 +28,7 @@ def generate_dataset(
     save_raw: bool = True,
     scene_overrides: dict | None = None,
     progress: bool = True,
+    profile: str = "demo",
 ) -> dict:
     """Write images/, labels/, raw/ (npz) and data.yaml under out_dir.
 
@@ -50,10 +51,10 @@ def generate_dataset(
     counts = {"train": 0, "val": 0, "objects": 0}
     t0 = time.time()
     for i in range(start, start + n_scenes):
-        scene = random_scene(rng, **(scene_overrides or {}))
+        scene = random_scene(rng, profile=profile, **(scene_overrides or {}))
         raw, dt, img, boxes = render_scene(scene, engine, rng)
         split = "val" if rng.random() < val_fraction else "train"
-        name = f"{engine}_{i:05d}"
+        name = f"{profile}_{engine}_{i:05d}"
         img.save(os.path.join(out_dir, "images", split, name + ".png"))
         with open(os.path.join(out_dir, "labels", split, name + ".txt"), "w") as f:
             f.write(yolo_label_text(boxes))

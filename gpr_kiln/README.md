@@ -82,6 +82,31 @@ def gpr_detect(image_path: str, scan_length_m: float = None, time_window_ns: flo
 - **출력(구조화)**: `{등급: A~D, 위치_m, 깊이_m, 근거, 추가조사_필요}`
 - Kiln Evals로 판정 결과를 검증하고, 사람이 확인한 판정은 Kiln 데이터셋에 쌓아 LLM 판정기를 파인튜닝
 
+## 4-0. Examiner 데이터로 바로 탐지하기 (KONTUR Deep 1808)
+
+장비 프로파일 `kontur-deep1808`: 30–1494 MHz, 트레이스 간격 55 mm, Examiner 처리 ε=7 · Time Window 42 ns (깊이 약 2.35 m).
+학습 장면 1장 = 약 2.6 m × 42 ns. 긴 측선은 이 크기로 잘라가며 탐지합니다.
+
+```bash
+# 1) 이 장비에 맞춘 학습 데이터 (돌·자갈 잡음 포함)
+gpr-kiln generate data/kontur --profile kontur-deep1808 -n 300 --seed 1
+gpr-kiln train data/kontur/data.yaml --epochs 80
+
+# 2-a) Examiner: Export Data → "Processed Data: SEG-Y" 로 내보낸 파일
+gpr-kiln detect-long best.pt line031_ch3.sgy --from-m 75.5 --to-m 99.5 --time-window-ns 42 --eps 7
+
+# 2-b) 또는 Examiner B-scan 화면 캡처 (데이터 영역만 자르기, 맨 위 = 0 ns)
+gpr-kiln detect-long best.pt bscan.png --from-m 75.5 --to-m 99.5 --time-window-ns 42 --eps 7
+```
+결과: 도로 거리(m), 공동 윗면 깊이(m), 클래스, 신뢰도 + 표시된 이미지. Kiln에서는 `gpr_detect_long` 도구로 같은 기능을 씁니다.
+
+SEG-Y 내보낼 때 권장
+- Region Processing: Interference Suppression, IFFT, Background Removal은 켜고, 게인은 0 dB (탐지 코드가 학습과 같은 방식으로 다시 정규화)
+- 채널(Ch)별 파일이면 그대로, 한 파일에 여러 채널이면 `--channel`, `--traces-per-channel` 지정
+- SEG-Y의 시간 단위는 장비마다 달라서 자동 추정합니다. 출력 `info.time_window_ns`가 Examiner Time Window와 같은지 확인하세요.
+
+실측 라벨 만들기: Examiner에서 표시한 "공동탐지의심" 같은 주석(Annotations)을 내보내면(텍스트/GeoJSON), 그 위치로 실측 학습 라벨을 만들 수 있습니다 (다음 단계).
+
 ## 4. 실제 KONTUR 데이터에 적용하기
 
 1. **같은 전처리**: 실측 B-scan을 `.npy`(행=시간 샘플, 열=트레이스)로 내보내 `--dt`(샘플 간격, 초)와 함께 넣으면, 학습 때와 같은 처리(배경 제거 → 시간 게인 → 정규화)를 거쳐 탐지합니다. Examiner에서 이미지로 내보낸 경우는 PNG를 바로 넣어도 되지만, 표시 설정(게인, 배경 제거)이 학습 영상과 비슷해야 정확합니다.

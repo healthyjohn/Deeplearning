@@ -15,7 +15,7 @@ import numpy as np
 
 C0 = 299_792_458.0  # speed of light, m/s
 
-CLASS_NAMES = ["cavity", "pipe"]
+CLASS_NAMES = ["cavity", "pipe"]  # "stone" clutter is never labelled
 
 
 @dataclass
@@ -51,6 +51,8 @@ class Scene:
     time_window: float = 0.0  # s, filled by finalize()
     layers: list[Layer] = field(default_factory=list)
     targets: list[Target] = field(default_factory=list)
+    clutter: list[Target] = field(default_factory=list)  # small stones (cls="stone", not labelled)
+    clutter_eps: list[float] = field(default_factory=list)
 
     # ---- geometry helpers -------------------------------------------------
     @property
@@ -106,14 +108,37 @@ class Scene:
         d = dict(d)
         d["layers"] = [Layer(**l) for l in d.get("layers", [])]
         d["targets"] = [Target(**t) for t in d.get("targets", [])]
+        d["clutter"] = [Target(**t) for t in d.get("clutter", [])]
         return cls(**d)
 
 
-def random_scene(rng: np.random.Generator, max_targets: int = 2, empty_prob: float = 0.1, **overrides) -> Scene:
-    """Draw a random road cross-section."""
-    s = Scene(**overrides)
-    asphalt = rng.uniform(0.05, 0.25)
-    base = asphalt + rng.uniform(0.15, 0.35)
+# Equipment profiles: scene settings matched to a real antenna / Examiner setup.
+PROFILES = {
+    # default small demo scene (fast)
+    "demo": {},
+    # KONTUR DXG "Deep 1808": 30-1494 MHz step-frequency, 55 mm trace interval.
+    # Examiner processing seen in practice: eps 7, time window ~42 ns (~2.35 m depth).
+    # gprMax is time-domain, so a 350 MHz Ricker stands in for the low-passed sweep.
+    "kontur-deep1808": dict(width=3.0, depth=2.4, air=0.1, dx=0.01, freq=350e6, trace_step=0.055,
+                            rx_offset=0.06, margin=0.15, time_window=42e-9),
+}
+
+# per-profile target / layer ranges
+PROFILE_RANGES = {
+    "demo": dict(asphalt=(0.05, 0.25), base=(0.15, 0.35), cavity_r=(0.05, 0.22), pipe_r=(0.02, 0.10),
+                 depth_frac=0.75, stones=(0, 0)),
+    "kontur-deep1808": dict(asphalt=(0.05, 0.30), base=(0.20, 0.50), cavity_r=(0.10, 0.45), pipe_r=(0.03, 0.30),
+                            depth_frac=0.80, stones=(20, 80)),
+}
+
+
+def random_scene(rng: np.random.Generator, max_targets: int = 2, empty_prob: float = 0.1,
+                 profile: str = "demo", **overrides) -> Scene:
+    """Draw a random road cross-section for an equipment profile."""
+    s = Scene(**{**PROFILES[profile], **overrides})
+    R = PROFILE_RANGES[profile]
+    asphalt = rng.uniform(*R["asphalt"])
+    base = asphalt + rng.uniform(*R["base"])
     s.layers = [
         Layer("asphalt", 0.0, rng.uniform(4.0, 7.0), rng.uniform(0.001, 0.005)),
         Layer("base", asphalt, rng.uniform(6.0, 10.0), rng.uniform(0.002, 0.01)),
@@ -127,9 +152,18 @@ def random_scene(rng: np.random.Generator, max_targets: int = 2, empty_prob: flo
         if len(s.targets) >= n:
             break
         cls = "cavity" if rng.random() < 0.6 else "pipe"
-        r = rng.uniform(0.05, 0.22) if cls == "cavity" else rng.uniform(0.02, 0.10)
-        d = rng.uniform(max(asphalt + r + 0.05, 0.2), s.depth * 0.75)
+        r = rng.uniform(*R["cavity_r"]) if cls == "cavity" else rng.uniform(*R["pipe_r"])
+        d = rng.uniform(max(asphalt + r + 0.05, 0.2), s.depth * R["depth_frac"])
         x = rng.uniform(lo, hi)
         if all(abs(x - t.x) > (r + t.radius + 0.15) for t in s.targets):
             s.targets.append(Target(cls, float(x), float(d), float(r)))
+
+    # unlabelled clutter: stones in base/subgrade (real roads are not homogeneous)
+    for _ in range(int(rng.integers(R["stones"][0], R["stones"][1] + 1))):
+        x = rng.uniform(s.dx * 12, s.width - s.dx * 12)
+        d = rng.uniform(asphalt + 0.03, s.depth * 0.95)
+        r = rng.uniform(0.015, 0.05)
+        if all(math.hypot(x - t.x, d - t.depth) > t.radius + r + 0.03 for t in s.targets):
+            s.clutter.append(Target("stone", float(x), float(d), float(r)))
+            s.clutter_eps.append(float(rng.uniform(4.0, 25.0)))
     return s.finalize()

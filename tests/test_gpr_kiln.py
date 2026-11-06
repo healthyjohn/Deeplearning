@@ -73,3 +73,33 @@ def test_gprmax_scene_runs():
     s = random_scene(np.random.default_rng(4), empty_prob=0, width=0.8, depth=0.5)
     raw, dt = simulate_gprmax(s)
     assert raw.shape[1] == s.n_traces and dt > 0
+
+
+def test_segy_roundtrip(tmp_path):
+    segyio = pytest.importorskip("segyio")
+    from gpr_kiln.kontur import load_segy
+
+    data = np.random.default_rng(0).standard_normal((400, 30)).astype(np.float32)
+    spec = segyio.spec()
+    spec.format, spec.samples, spec.tracecount = 5, list(range(400)), 30
+    p = str(tmp_path / "x.sgy")
+    with segyio.create(p, spec) as f:
+        f.bin.update(hns=400, hdt=105)  # 105 ps -> 42 ns window
+        for i in range(30):
+            f.trace[i] = data[:, i]
+    d = load_segy(p)
+    assert d["bscan"].shape == (400, 30)
+    assert abs(d["info"]["time_window_ns"] - 42.0) < 0.1
+
+
+def test_profile_tile():
+    from gpr_kiln.kontur import profile_tile
+
+    m, ns = profile_tile("kontur-deep1808")
+    assert 2.0 < m < 3.0 and ns == pytest.approx(42.0)
+
+
+def test_kontur_scene_has_clutter():
+    s = random_scene(np.random.default_rng(5), profile="kontur-deep1808")
+    assert len(s.clutter) > 0 and s.trace_step == 0.055
+    assert gprmax_input(s).count("#cylinder:") == len(s.targets) + len(s.clutter)

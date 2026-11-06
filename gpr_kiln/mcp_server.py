@@ -110,6 +110,43 @@ def gpr_detect(
     return detect(_abs(model_path), src, conf, scan_length_m, time_window_ns, eps, dt, annotated)
 
 
+@server.tool()
+def gpr_detect_long(
+    input_path: str,
+    model_path: str,
+    distance_from_m: float,
+    distance_to_m: float,
+    time_window_ns: float,
+    eps: float = 7.0,
+    profile: str = "kontur-deep1808",
+    conf: float = 0.25,
+    segy_channel: int | None = None,
+    segy_traces_per_channel: int | None = None,
+) -> dict:
+    """Detect cavities/pipes along a long road B-scan from Examiner.
+
+    input_path: Examiner "Processed Data: SEG-Y" export (.sgy/.segy) or a B-scan
+    screenshot (.png/.jpg/.webp) cropped to the data area (top = 0 ns).
+    distance_from_m/to_m: road distance at the left/right edge. time_window_ns: time
+    shown top-to-bottom (Examiner processing "Time Window"). eps: Examiner Epsilon.
+    Returns detections with road distance (m) and depth to top (m).
+    """
+    from PIL import Image
+
+    from .imaging import process_bscan
+    from .kontur import detect_long, image_to_display, load_segy
+
+    src = _abs(input_path)
+    if src.lower().endswith((".sgy", ".segy")):
+        d = load_segy(src, segy_channel, segy_traces_per_channel)
+        display = process_bscan(d["bscan"], d["dt"])
+    else:
+        display = image_to_display(Image.open(src))
+    out = detect_long(_abs(model_path), display, (distance_from_m, distance_to_m), time_window_ns, eps, profile,
+                      conf=conf, annotate_path=os.path.splitext(src)[0] + "_detected_long.png")
+    return out
+
+
 def main(transport: str = "stdio"):
     os.makedirs(WORK_DIR, exist_ok=True)
     server.run(transport=transport)
